@@ -1,3 +1,4 @@
+#include <SerialServer.h>
 #include <WebServer.h>
 #include <TivaTwoWire.h>  
 #include <Cmd.h>
@@ -12,6 +13,8 @@
 #include "inc/hw_flash.h"
 #include "driverlib/sysctl.h"
 
+void defaultPage(WebServer &server, WebServer::ConnectionType type, char *url_tail, bool tail_complete);
+
 const char *cmd_banner = ">>> ASPS-DAQ Basic Setup Interface";
 const char *cmd_prompt = "ADAQ> ";
 const char *cmd_unrecog = "Unknown command.";
@@ -24,7 +27,7 @@ const char *cmd_unrecog = "Unknown command.";
 
 #define VERSION "v0.1"
 
-HardwareSerial *bridgeSerial = NULL;
+SerialServer *bridgeSerial = NULL;
 unsigned char bridgeExitMatch = 0;
 #define EXIT_LENGTH 3
 #define EXIT_CHAR '+'
@@ -37,6 +40,10 @@ typedef enum {
 
 EthernetState eState;
 EthernetBootloader boot;
+SerialServer ser1(23, 1);
+SerialServer ser4(24, 4);
+SerialServer ser5(25, 5);
+SerialServer ser7(26, 7);
 
 #define SENSOR_UPDATE_PERIOD 1000
 unsigned long sensorUpdateTime = 0;
@@ -117,10 +124,10 @@ void setup() {
     digitalWrite(onPins[i], 0);
   }
   Serial.end();
-  Serial1.begin(9600);
-  Serial4.begin(9600);
-  Serial5.begin(9600);
-  Serial7.begin(9600);
+  ser1.beginSerial(9600);
+  ser4.beginSerial(9600);
+  ser5.beginSerial(9600);
+  ser7.beginSerial(9600);
   // this command crap needs to be fixed. I hate these libraries.
   cmdInit(38400);
   cmdAdd("getmac", getMacAddress);
@@ -294,15 +301,16 @@ int serialBridge(int argc, char **argv) {
   if (port < PORT_BRIDGE_MAX) {
     unsigned char exit_match = 0;
     switch (port) {
-      case 0: bridgeSerial = &Serial1; break;
-      case 1: bridgeSerial = &Serial4; break;
-      case 2: bridgeSerial = &Serial5; break;
-      case 3: bridgeSerial = &Serial7; break;
+      case 0: bridgeSerial = &ser1; break;
+      case 1: bridgeSerial = &ser4; break;
+      case 2: bridgeSerial = &ser5; break;
+      case 3: bridgeSerial = &ser7; break;
     }
   } else {
     Serial.println("invalid port");
     return 0;
   }
+  bridgeSerial->bridge(true);
   return 1;
 }
 
@@ -425,31 +433,17 @@ void loop() {
       bridgeSerial->write(c);
     }
     if (bridgeExitMatch >= EXIT_LENGTH) {
+      bridgeSerial->bridge(false);
       bridgeSerial = NULL;
       bridgeExitMatch = 0;
       cmdPrompt();
     }
   }
-  // Serial1 handling.
-  while (Serial1.available()) {
-    c = Serial1.read();
-    if (bridgeSerial == &Serial1) Serial.write(c);
-  }
-  // Serial4 handling.
-  while (Serial4.available()) {
-    c = Serial4.read();
-    if (bridgeSerial == &Serial4) Serial.write(c);
-  }
-  // Serial5 handling.
-  while (Serial5.available()) {
-    c = Serial5.read();
-    if (bridgeSerial == &Serial5) Serial.write(c);
-  }
-  // Serial7 handling.
-  while (Serial7.available()) {
-    c = Serial7.read();
-    if (bridgeSerial == &Serial7) Serial.write(c);
-  }
+  // Serial handling.
+  ser1.handle();
+  ser4.handle();
+  ser5.handle();
+  ser7.handle();
 
   if (eState == ETHERNET_STARTED_WAIT_DHCP) {
     if (Ethernet.ready()) {
@@ -462,6 +456,10 @@ void loop() {
       webServer.begin();
       webServer.addCommand("index.html", &defaultPage);
       webServer.setDefaultCommand(&defaultPage);
+      ser1.beginEthernet();
+      ser4.beginEthernet();
+      ser5.beginEthernet();
+      ser7.beginEthernet();
     }
   }
   if (eState == ETHERNET_READY) {
