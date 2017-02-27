@@ -481,7 +481,7 @@ void sensorLoop()
 {
   int32_t temp;
   unsigned char faultBit;
-  unsigned char tmp;
+  char tmp;
   
   switch (sState) {
     case SENSOR_STATE_ADC0:
@@ -570,8 +570,6 @@ void sensorLoop()
         tmp = Wire.read();
         if (tmp & 0x80) curSensors.temps[2] = 0 - (256 - tmp);
         else curSensors.temps[2] = tmp;
-        
-        curSensors.temps[2] = Wire.read();        
       } else {
         Serial.println("I2C> I2C error");
       }
