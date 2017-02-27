@@ -167,9 +167,67 @@ void setup() {
   cmdAdd("status", printStatus);
   cmdAdd("control", control);
   cmdAdd("identify", doIdentify);
+  cmdAdd("bsl", doBsl);
   cmdAdd("reboot", doReboot);
   analogRead(TEMPSENSOR);
   Wire.begin();
+}
+
+void bslReset(bool heater, bool bsl) {
+  if (!heater) {
+    if (!bsl) {
+      // ASPS-POWER, normal reset
+      digitalWrite(RST_ASPS_PWR_B, 1);
+      pinMode(RST_ASPS_PWR_B, OUTPUT);
+      digitalWrite(RST_ASPS_PWR_B, 0);
+      digitalWrite(RST_ASPS_PWR_B, 1);
+      pinMode(RST_ASPS_PWR_B, INPUT_PULLUP);
+    } else {
+      // ASPS-POWER, BSL reset
+      Serial4.end();
+      digitalWrite(RST_ASPS_PWR_B, 1);
+      digitalWrite(ASPSPWR_RX, 1);
+      pinMode(RST_ASPS_PWR_B, OUTPUT);
+      pinMode(ASPSPWR_RX, OUTPUT);
+      digitalWrite(RST_ASPS_PWR_B, 0);
+      delayMicroseconds(100);
+      digitalWrite(RST_ASPS_PWR_B, 1);
+      digitalWrite(ASPSPWR_RX, 0);
+      digitalWrite(ASPSPWR_RX, 1);
+      digitalWrite(ASPSPWR_RX, 0);         
+      // THIS DELAY SHOULD BE TUNED TO MAKE SURE ASPSPWR'S RESET ONESHOT HAS COMPLETED
+      delay(5);
+      digitalWrite(ASPSPWR_RX, 1);
+      pinMode(ASPSPWR_RX, INPUT);
+      pinMode(RST_ASPS_PWR_B, INPUT_PULLUP);
+      Serial4.begin(9600);
+    }
+  } else {
+    if (!bsl) {
+      // Heater, normal reset
+      digitalWrite(TIVA_RST_MSP430, 0);
+      pinMode(TIVA_RST_MSP430, OUTPUT);
+      digitalWrite(TIVA_RST_MSP430, 1);
+      digitalWrite(TIVA_RST_MSP430, 0);
+      pinMode(TIVA_RST_MSP430, INPUT);
+    } else {
+      // Heater, BSL reset
+      digitalWrite(TIVA_RST_MSP430, 0);
+      digitalWrite(MSP430_TEST, 0);
+      pinMode(TIVA_RST_MSP430, OUTPUT);
+      pinMode(MSP430_TEST, OUTPUT);
+      digitalWrite(TIVA_RST_MSP430, 1);
+      delayMicroseconds(100);
+      digitalWrite(MSP430_TEST, 1);
+      digitalWrite(MSP430_TEST, 0);
+      digitalWrite(MSP430_TEST, 1);
+      digitalWrite(TIVA_RST_MSP430, 0);
+      delayMicroseconds(100);
+      digitalWrite(MSP430_TEST, 0);
+      pinMode(MSP430_TEST, INPUT);
+      pinMode(TIVA_RST_MSP430, INPUT);
+    }
+  }
 }
 
 void copyBoardID() {
@@ -212,6 +270,25 @@ int setBoardID(int argc, char **argv) {
     Serial.println("Board ID update OK.");
     copyBoardID();
   }
+  return 0;
+}
+
+int doBsl(int argc, char **argv) {
+  bool heater;
+  bool bsl;
+  
+  argc--;
+  argv++;
+  if (argc < 2) {
+    Serial.println("bsl [0-1] [0-1]");
+    return 0;
+  }
+  heater = false;
+  bsl = false;
+  if (atoi(*argv)) heater = true;
+  argv++;
+  if (atoi(*argv)) bsl = true;
+  bslReset(heater, bsl);
   return 0;
 }
 
@@ -590,61 +667,8 @@ void bslPage(WebServer &server, WebServer::ConnectionType type, char *url_tail, 
         if (atoi(name) == 0) if (atoi(value)) reboot_heater = true;
         if (atoi(name) == 1) if (atoi(value)) bsl_boot = true;
       }
-      if (!reboot_heater) {
-        if (!bsl_boot) {
-          // ASPS-POWER, normal reset
-          digitalWrite(RST_ASPS_PWR_B, 1);
-          pinMode(RST_ASPS_PWR_B, OUTPUT);
-          digitalWrite(RST_ASPS_PWR_B, 0);
-          digitalWrite(RST_ASPS_PWR_B, 1);
-          pinMode(RST_ASPS_PWR_B, INPUT_PULLUP);
-        } else {
-          // ASPS-POWER, BSL reset
-          Serial4.end();
-          digitalWrite(RST_ASPS_PWR_B, 1);
-          digitalWrite(ASPSPWR_RX, 1);
-          pinMode(RST_ASPS_PWR_B, OUTPUT);
-          pinMode(ASPSPWR_RX, OUTPUT);
-          digitalWrite(RST_ASPS_PWR_B, 0);
-          delayMicroseconds(100);
-          digitalWrite(RST_ASPS_PWR_B, 1);
-          digitalWrite(ASPSPWR_RX, 0);
-          digitalWrite(ASPSPWR_RX, 1);
-          digitalWrite(ASPSPWR_RX, 0);         
-          // THIS DELAY SHOULD BE TUNED TO MAKE SURE ASPSPWR'S RESET ONESHOT HAS COMPLETED
-          delay(5);
-          digitalWrite(ASPSPWR_RX, 1);
-          pinMode(ASPSPWR_RX, INPUT);
-          pinMode(RST_ASPS_PWR_B, INPUT);
-          Serial4.begin(9600);
-        }
-      } else {
-        if (!bsl_boot) {
-          // Heater, normal reset
-          digitalWrite(TIVA_RST_MSP430, 0);
-          pinMode(TIVA_RST_MSP430, OUTPUT);
-          digitalWrite(TIVA_RST_MSP430, 1);
-          digitalWrite(TIVA_RST_MSP430, 0);
-          pinMode(TIVA_RST_MSP430, INPUT);
-        } else {
-          // Heater, BSL reset
-          digitalWrite(TIVA_RST_MSP430, 0);
-          digitalWrite(MSP430_TEST, 0);
-          pinMode(TIVA_RST_MSP430, OUTPUT);
-          pinMode(MSP430_TEST, OUTPUT);
-          digitalWrite(TIVA_RST_MSP430, 1);
-          delayMicroseconds(100);
-          digitalWrite(MSP430_TEST, 1);
-          digitalWrite(MSP430_TEST, 0);
-          digitalWrite(MSP430_TEST, 1);
-          digitalWrite(TIVA_RST_MSP430, 0);
-          delayMicroseconds(100);
-          digitalWrite(MSP430_TEST, 0);
-          pinMode(MSP430_TEST, INPUT);
-          pinMode(TIVA_RST_MSP430, INPUT);
-        }
-      }
     }
+    bslReset(reboot_heater, bsl_boot);
   }
 
   
