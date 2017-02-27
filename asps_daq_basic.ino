@@ -15,6 +15,8 @@
 
 void defaultPage(WebServer &server, WebServer::ConnectionType type, char *url_tail, bool tail_complete);
 void serialPage(WebServer &server, WebServer::ConnectionType type, char *url_tail, bool tail_complete);
+void bslPage(WebServer &server, WebServer::ConnectionType type, char *url_tail, bool tail_complete);
+
 
 const char *cmd_banner = ">>> ASPS-DAQ Basic Setup Interface";
 const char *cmd_prompt = "ADAQ> ";
@@ -28,10 +30,19 @@ const char *cmd_unrecog = "Unknown command.";
 
 #define ASPSDAQ_BOARD_ID_ADDRESS 0
 
-#define EN_TIVA_COMMS_B 58
+// Enable TIVA <-> Heater BSL comms pin (inverted)
+#define TIVA_EN_BSL_B      58
+// Reset ASPS-POWER pin (inverted)
+#define RST_ASPS_PWR_B     79
+// ASPS-POWER RX (our transmit!)/multiplexed TEST line
+#define ASPSPWR_RX         66
+// Reset heater (not inverted)
+#define TIVA_RST_MSP430    53
+// Heater test (not inverted)
+#define MSP430_TEST        11
 
 char boardID[9];
-#define VERSION "v0.5-pre0"
+#define VERSION "v0.5-pre1"
 
 SerialServer *bridgeSerial = NULL;
 unsigned char bridgeExitMatch = 0;
@@ -131,9 +142,12 @@ void setup() {
     onState[i] = 1;
     digitalWrite(onPins[i], 0);
   }
+  // Pull up the output reset to look nice on a scope.
+  pinMode(RST_ASPS_PWR_B, INPUT_PULLUP);
+  
   // Enable heater comms.
-  pinMode(EN_TIVA_COMMS_B, OUTPUT);
-  digitalWrite(EN_TIVA_COMMS_B, 0);
+  pinMode(TIVA_EN_BSL_B, OUTPUT);
+  digitalWrite(TIVA_EN_BSL_B, 0);
   // Copy board ID.
   copyBoardID();
   
@@ -528,7 +542,7 @@ void loop() {
       webServer.begin();
       webServer.addCommand("index.html", &defaultPage);
       webServer.addCommand("serial.html", &serialPage);
-//      webServer.addCommand("bsl.html", &bslPage);
+      webServer.addCommand("bsl.html", &bslPage);
       webServer.setDefaultCommand(&defaultPage);
       ser1.beginEthernet();
       ser4.beginEthernet();
@@ -541,6 +555,101 @@ void loop() {
     webServer.processConnection();
   }
 }
+
+void bslPage(WebServer &server, WebServer::ConnectionType type, char *url_tail, bool tail_complete)
+{
+  char name[5];
+  char value[5];
+  URLPARAM_RESULT rc;
+  bool reboot_heater = false;
+  bool bsl_boot = false;
+  const char *startPage = "<html>"
+                          "<head>"
+                          "<title>ASPS-DAQ BSL Helper Page</title>"
+                          "</head>"
+                          "<body>"
+                          "<h1>ASPS-DAQ BSL Helper Page</h1>"
+                          "<br>"
+                          "<form action=\"bsl.html\" method=\"get\">"
+                          "<input type=\"radio\" name=\"0\" value=\"0\" checked>ASPS-POWER"
+                          "<input type=\"radio\" name=\"0\" value=\"1\">Heater"
+                          "<br>"
+                          "<input type=\"radio\" name=\"1\" value=\"0\" checked>Normal"
+                          "<input type=\"radio\" name=\"1\" value=\"1\">BSL"
+                          "<br>"
+                          "<input type=\"submit\" value=\"Reboot Microcontroller\">"
+                          "</form>"
+                          "</body>"
+                          "</html>";
+  server.httpSuccess();
+
+  if (strlen(url_tail)) {
+    while (strlen(url_tail)) {
+      rc = server.nextURLparam(&url_tail, name, 5, value, 5);
+      if (rc != URLPARAM_EOS) {
+        if (atoi(name) == 0) if (atoi(value)) reboot_heater = true;
+        if (atoi(name) == 1) if (atoi(value)) bsl_boot = true;
+      }
+      if (!reboot_heater) {
+        if (!bsl_boot) {
+          // ASPS-POWER, normal reset
+          digitalWrite(RST_ASPS_PWR_B, 1);
+          pinMode(RST_ASPS_PWR_B, OUTPUT);
+          digitalWrite(RST_ASPS_PWR_B, 0);
+          digitalWrite(RST_ASPS_PWR_B, 1);
+          pinMode(RST_ASPS_PWR_B, INPUT_PULLUP);
+        } else {
+          // ASPS-POWER, BSL reset
+          Serial4.end();
+          digitalWrite(RST_ASPS_PWR_B, 1);
+          digitalWrite(ASPSPWR_RX, 1);
+          pinMode(RST_ASPS_PWR_B, OUTPUT);
+          pinMode(ASPSPWR_RX, OUTPUT);
+          digitalWrite(RST_ASPS_PWR_B, 0);
+          delayMicroseconds(100);
+          digitalWrite(RST_ASPS_PWR_B, 1);
+          digitalWrite(ASPSPWR_RX, 0);
+          digitalWrite(ASPSPWR_RX, 1);
+          digitalWrite(ASPSPWR_RX, 0);         
+          // THIS DELAY SHOULD BE TUNED TO MAKE SURE ASPSPWR'S RESET ONESHOT HAS COMPLETED
+          delay(5);
+          digitalWrite(ASPSPWR_RX, 1);
+          pinMode(ASPSPWR_RX, INPUT);
+          pinMode(RST_ASPS_PWR_B, INPUT);
+          Serial4.begin(9600);
+        }
+      } else {
+        if (!bsl_boot) {
+          // Heater, normal reset
+          digitalWrite(TIVA_RST_MSP430, 0);
+          pinMode(TIVA_RST_MSP430, OUTPUT);
+          digitalWrite(TIVA_RST_MSP430, 1);
+          digitalWrite(TIVA_RST_MSP430, 0);
+          pinMode(TIVA_RST_MSP430, INPUT);
+        } else {
+          // Heater, BSL reset
+          digitalWrite(TIVA_RST_MSP430, 0);
+          digitalWrite(MSP430_TEST, 0);
+          pinMode(TIVA_RST_MSP430, OUTPUT);
+          pinMode(MSP430_TEST, OUTPUT);
+          digitalWrite(TIVA_RST_MSP430, 1);
+          delayMicroseconds(100);
+          digitalWrite(MSP430_TEST, 1);
+          digitalWrite(MSP430_TEST, 0);
+          digitalWrite(MSP430_TEST, 1);
+          digitalWrite(TIVA_RST_MSP430, 0);
+          delayMicroseconds(100);
+          digitalWrite(MSP430_TEST, 0);
+          pinMode(MSP430_TEST, INPUT);
+          pinMode(TIVA_RST_MSP430, INPUT);
+        }
+      }
+    }
+  }
+
+  
+  server.print(startPage);
+}  
 
 void serialPage(WebServer &server, WebServer::ConnectionType type, char *url_tail, bool tail_complete)
 {
