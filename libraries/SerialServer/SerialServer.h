@@ -13,6 +13,8 @@ class SerialServer {
   void handle();
   void write(const char c);
   void bridge(bool yesno);
+  bool connected();
+  void disconnect();
  private:
   void handleEthernet();
   void handleSerial();

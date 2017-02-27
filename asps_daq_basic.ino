@@ -25,7 +25,12 @@ const char *cmd_unrecog = "Unknown command.";
 // so byte 1 is 000 010 0 0 = 0x08
 #define ASPS_DAQ_BOOTCFG  0x7FFF08FE
 
-#define VERSION "v0.1"
+#define ASPSDAQ_BOARD_ID_ADDRESS 0
+
+#define EN_TIVA_COMMS_B 58
+
+char boardID[9];
+#define VERSION "v0.4"
 
 SerialServer *bridgeSerial = NULL;
 unsigned char bridgeExitMatch = 0;
@@ -87,7 +92,9 @@ WebServer webServer("", 80);
 void setup() {
   uint32_t user0, user1;
   uint32_t tmp;
+  uint32_t boardID_raw[2];
   
+  ROM_EEPROMInit();  
   // Figure out the bootloader crap.
   Serial.begin(9600);  
   Serial.println("ASPS-DAQ Basic " VERSION);
@@ -123,6 +130,14 @@ void setup() {
     onState[i] = 1;
     digitalWrite(onPins[i], 0);
   }
+  // Enable heater comms.
+  pinMode(EN_TIVA_COMMS_B, OUTPUT);
+  digitalWrite(EN_TIVA_COMMS_B, 0);
+  // Copy board ID.
+  ROM_EEPROMRead(boardID_raw, ASPSDAQ_BOARD_ID_ADDRESS, 8);
+  memcpy(boardID, boardID_raw, 8);
+  boardID[8] = NULL;
+  
   Serial.end();
   ser1.beginSerial(9600);
   ser4.beginSerial(9600);
@@ -133,12 +148,69 @@ void setup() {
   cmdAdd("getmac", getMacAddress);
   cmdAdd("setmac", setMacAddress);
   cmdAdd("savemac", saveMacAddress);
+  cmdAdd("setid", setBoardID);
   cmdAdd("bridge", serialBridge);
   cmdAdd("ip", showip);
   cmdAdd("status", printStatus);
   cmdAdd("control", control);
+  cmdAdd("identify", doIdentify);
+  cmdAdd("reboot", doReboot);
   analogRead(TEMPSENSOR);
   Wire.begin();
+}
+
+// The board ID is 8 characters.
+int setBoardID(int argc, char **argv) {
+  // EEPROM wants a 32-bit aligned pointer. So allocate 8 bytes as 2 32-bit objects.
+  uint32_t boardID_raw[2];
+  // Byte pointer to above.
+  char *pBoardID;
+  int i;
+  int err;
+  char *newBoardStr;
+  argc--;
+  argv++;
+  if (!argc) {
+    Serial.println("setid needs an 8-character ID");
+    return 0;
+  }
+  newBoardStr = *argv;
+  // Get byte pointer to 32-bit storage space.
+  pBoardID = (char *) boardID_raw;
+  for (i=0;i<8;i++) {
+    if (newBoardStr[i] == NULL) {
+      Serial.println("setid needs an 8-character ID");
+      return 0;
+    }
+    pBoardID[i] = newBoardStr[i];
+  }
+  if (err = ROM_EEPROMProgram(boardID_raw, ASPSDAQ_BOARD_ID_ADDRESS, 8)) {
+    Serial.println("Board ID update failed!");
+    Serial.print("Error ");
+    Serial.println(err);
+  } else {
+    Serial.println("Board ID update OK.");
+  }
+  return 0;
+}
+
+int doReboot(int argc, char **argv) {
+  SysCtlReset();
+}
+
+int doIdentify(int argc, char **argv) {
+  // generate enough storage in a 32-bit aligned space for 8 characters + null terminator
+  uint32_t boardID_raw[3];
+  char *pBoardID;
+  
+  ROM_EEPROMRead(boardID_raw, ASPSDAQ_BOARD_ID_ADDRESS, 8);
+  pBoardID = (char *) boardID_raw;
+  pBoardID[8] = NULL;
+  Serial.print("ADAQ ");
+  Serial.print(pBoardID);
+  Serial.print(" ");
+  Serial.println(VERSION);
+  return 0;
 }
 
 int control(int argc, char **argv) {
@@ -488,6 +560,9 @@ void defaultPage(WebServer &server, WebServer::ConnectionType type, char *url_ta
                             "<title>ASPS-DAQ Main Page</title>"
                             "<body>"
                             "<h1>ASPS-DAQ Main Page</h1>"
+                            "<br>";
+  const char *idStart   =   "<p>Board ID: ";
+  const char *idEnd     =   "</p>"
                             "<br>"
                             "<h2>Sensors</h2>"
                             "<form action=\"index.html\" method=\"get\">"
@@ -516,6 +591,7 @@ void defaultPage(WebServer &server, WebServer::ConnectionType type, char *url_ta
     }
   }
   server.print(startPage);
+  server.print(idStart);
   for (i=0;i<5;i++) {
     server.print("<h3>");
     server.print(output_labels[i]);

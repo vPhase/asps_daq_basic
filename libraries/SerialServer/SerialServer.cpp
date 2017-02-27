@@ -6,9 +6,10 @@
 // IAC SE
 // IAC WILL SUPPRESS-GOAHEAD
 // IAC DO SUPPRESS-GOAHEAD
+// IAC DO SUPPRESS-LOCAL-ECHO
 // IAC WILL BINARY
 // IAC DO BINARY
-static const unsigned char telnet_raw_mode[] = { 255, 253, 34, 255, 250, 34, 1, 0, 255, 240, 255, 253, 3, 255, 251, 3, 255, 253, 0, 255, 251, 0 };
+static const unsigned char telnet_raw_mode[] = { 255, 253, 34, 255, 250, 34, 1, 0, 255, 240, 255, 253, 3, 255, 251, 3, 255, 253, 45, 255, 253, 0, 255, 251, 0 };
 
 SerialServer::SerialServer(uint16_t tcpPort, unsigned long uart) : _server(tcpPort),_uart(uart), _client(NULL), _bridging(false), _state(state_NO_ETHERNET) {
   switch (uart) {
@@ -42,7 +43,8 @@ void SerialServer::handleEthernet() {
   unsigned int nb;
   unsigned int space;
   unsigned char inb;
-
+  EthernetClient temp;
+  
   if (_state == state_NO_ETHERNET) return;
 
   if (_state == state_NO_CONNECTION) {
@@ -144,4 +146,13 @@ void SerialServer::write(const char c) {
 
 void SerialServer::bridge(bool yesno) {
   _bridging = yesno;
+}
+
+bool SerialServer::connected() {
+  return (_state > state_NO_CONNECTION);
+}
+
+void SerialServer::disconnect() {
+  _client.stop();
+  _state = state_NO_CONNECTION;  
 }
