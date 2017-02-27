@@ -548,7 +548,9 @@ void serialPage(WebServer &server, WebServer::ConnectionType type, char *url_tai
   char value[5];
   
   const char *startPage = "<html>"
+                          "<head>"
                           "<title>ASPS-DAQ Serial Status Page</title>"
+                          "</head>"
                           "<body>"
                           "<h1>ASPS-DAQ Serial Status Page</h1>"
                           "<br>";
@@ -617,6 +619,7 @@ void defaultPage(WebServer &server, WebServer::ConnectionType type, char *url_ta
   const char *startPage = "<html>"
                             "<head>"
                             "<title>ASPS-DAQ Main Page</title>"
+                            "</head>"
                             "<body>"
                             "<h1>ASPS-DAQ Main Page</h1>"
                             "<br>";
