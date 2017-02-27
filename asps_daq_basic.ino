@@ -14,6 +14,7 @@
 #include "driverlib/sysctl.h"
 
 void defaultPage(WebServer &server, WebServer::ConnectionType type, char *url_tail, bool tail_complete);
+void serialPage(WebServer &server, WebServer::ConnectionType type, char *url_tail, bool tail_complete);
 
 const char *cmd_banner = ">>> ASPS-DAQ Basic Setup Interface";
 const char *cmd_prompt = "ADAQ> ";
@@ -30,7 +31,7 @@ const char *cmd_unrecog = "Unknown command.";
 #define EN_TIVA_COMMS_B 58
 
 char boardID[9];
-#define VERSION "v0.4"
+#define VERSION "v0.5-pre0"
 
 SerialServer *bridgeSerial = NULL;
 unsigned char bridgeExitMatch = 0;
@@ -134,9 +135,7 @@ void setup() {
   pinMode(EN_TIVA_COMMS_B, OUTPUT);
   digitalWrite(EN_TIVA_COMMS_B, 0);
   // Copy board ID.
-  ROM_EEPROMRead(boardID_raw, ASPSDAQ_BOARD_ID_ADDRESS, 8);
-  memcpy(boardID, boardID_raw, 8);
-  boardID[8] = NULL;
+  copyBoardID();
   
   Serial.end();
   ser1.beginSerial(9600);
@@ -157,6 +156,13 @@ void setup() {
   cmdAdd("reboot", doReboot);
   analogRead(TEMPSENSOR);
   Wire.begin();
+}
+
+void copyBoardID() {
+  uint32_t boardID_raw[2];
+  ROM_EEPROMRead(boardID_raw, ASPSDAQ_BOARD_ID_ADDRESS, 8);
+  memcpy(boardID, boardID_raw, 8);
+  boardID[8] = NULL;
 }
 
 // The board ID is 8 characters.
@@ -190,6 +196,7 @@ int setBoardID(int argc, char **argv) {
     Serial.println(err);
   } else {
     Serial.println("Board ID update OK.");
+    copyBoardID();
   }
   return 0;
 }
@@ -198,16 +205,9 @@ int doReboot(int argc, char **argv) {
   SysCtlReset();
 }
 
-int doIdentify(int argc, char **argv) {
-  // generate enough storage in a 32-bit aligned space for 8 characters + null terminator
-  uint32_t boardID_raw[3];
-  char *pBoardID;
-  
-  ROM_EEPROMRead(boardID_raw, ASPSDAQ_BOARD_ID_ADDRESS, 8);
-  pBoardID = (char *) boardID_raw;
-  pBoardID[8] = NULL;
+int doIdentify(int argc, char **argv) {  
   Serial.print("ADAQ ");
-  Serial.print(pBoardID);
+  Serial.print(boardID);
   Serial.print(" ");
   Serial.println(VERSION);
   return 0;
@@ -527,6 +527,8 @@ void loop() {
       boot.begin();
       webServer.begin();
       webServer.addCommand("index.html", &defaultPage);
+      webServer.addCommand("serial.html", &serialPage);
+//      webServer.addCommand("bsl.html", &bslPage);
       webServer.setDefaultCommand(&defaultPage);
       ser1.beginEthernet();
       ser4.beginEthernet();
@@ -538,6 +540,63 @@ void loop() {
     boot.handle();
     webServer.processConnection();
   }
+}
+
+void serialPage(WebServer &server, WebServer::ConnectionType type, char *url_tail, bool tail_complete)
+{
+  char name[5];
+  char value[5];
+  
+  const char *startPage = "<html>"
+                          "<title>ASPS-DAQ Serial Status Page</title>"
+                          "<body>"
+                          "<h1>ASPS-DAQ Serial Status Page</h1>"
+                          "<br>";
+  const char *endPage = "<form action=\"serial.html\" method=\"get\">"
+                        "<input type=\"checkbox\" name=\"dis\" value=\"0\">Port 23<br>"
+                        "<input type=\"checkbox\" name=\"dis\" value=\"1\">Port 24<br>"
+                        "<input type=\"checkbox\" name=\"dis\" value=\"2\">Port 25<br>"
+                        "<input type=\"checkbox\" name=\"dis\" value=\"3\">Port 26<br>"
+                        "<input type=\"submit\" value=\"Disconnect\"></form></body></html>";  
+  URLPARAM_RESULT rc;
+
+  server.httpSuccess();
+  
+  if (strlen(url_tail)) {
+    while (strlen(url_tail)) {
+      rc = server.nextURLparam(&url_tail, name, 5, value, 5);
+      if (rc != URLPARAM_EOS) {
+        if (!strcmp("dis", name)) {
+          switch(atoi(value)) {
+            case 0: if (ser1.connected()) ser1.disconnect(); break;
+            case 1: if (ser4.connected()) ser4.disconnect(); break;
+            case 2: if (ser5.connected()) ser5.disconnect(); break;
+            case 3: if (ser7.connected()) ser7.disconnect(); break;
+            default: break;
+          }
+        }
+      }
+    }
+  }
+    
+  server.print(startPage);
+  server.print("<p>Port 23 (Heater BSL): ");
+  if (!ser1.connected()) server.print("NOT ");
+  server.print("CONNECTED</p>");
+
+  server.print("<p>Port 24 (ASPS-POWER): ");
+  if (!ser4.connected()) server.print("NOT ");
+  server.print("CONNECTED</p>");
+
+  server.print("<p>Port 25 (SBC): ");
+  if (!ser5.connected()) server.print("NOT ");
+  server.print("CONNECTED</p>");
+
+  server.print("<p>Port 26 (Heater): ");
+  if (!ser7.connected()) server.print("NOT ");
+  server.print("CONNECTED</p>");
+  
+  server.print(endPage);
 }
 
 const char *output_labels[5] = {
@@ -567,7 +626,7 @@ void defaultPage(WebServer &server, WebServer::ConnectionType type, char *url_ta
                             "<h2>Sensors</h2>"
                             "<form action=\"index.html\" method=\"get\">"
                             "<p>";
-  const char *tempStart   = "<input type=\"submit\" value=\"Change Outputs\"></form></p><p>"
+  const char *tempStart   = "<br>Note: turning off Fiber doesn't actually work here (on purpose).<br><input type=\"submit\" value=\"Change Outputs\"></form></p><p>"
                             "Temperature:"; 
   const char *endPage     = "</p></body></html>";
   
@@ -578,7 +637,7 @@ void defaultPage(WebServer &server, WebServer::ConnectionType type, char *url_ta
       rc = server.nextURLparam(&url_tail, name, 5, value, 5);
       if (rc != URLPARAM_EOS) {
         param_number = atoi(name);
-        if (param_number < 5) {
+        if (param_number < 4) {
           if (atoi(value)) {
              pinMode(onPins[param_number], INPUT);
              onState[param_number] = 1;
@@ -592,6 +651,9 @@ void defaultPage(WebServer &server, WebServer::ConnectionType type, char *url_ta
   }
   server.print(startPage);
   server.print(idStart);
+  server.print(boardID);
+  server.print(" " VERSION);
+  server.print(idEnd);
   for (i=0;i<5;i++) {
     server.print("<h3>");
     server.print(output_labels[i]);
