@@ -42,7 +42,7 @@ const char *cmd_unrecog = "Unknown command.";
 #define MSP430_TEST        11
 
 char boardID[9];
-#define VERSION "v0.5-pre1"
+#define VERSION "v0.5-pre2"
 
 SerialServer *bridgeSerial = NULL;
 unsigned char bridgeExitMatch = 0;
@@ -108,7 +108,7 @@ void setup() {
   
   ROM_EEPROMInit();  
   // Figure out the bootloader crap.
-  Serial.begin(9600);  
+  Serial.begin(38400);  
   Serial.println("ASPS-DAQ Basic " VERSION);
   // Check the BOOTCFG register.
   tmp = HWREG(FLASH_BOOTCFG);
