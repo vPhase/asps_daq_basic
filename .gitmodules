@@ -1,0 +1,3 @@
+[submodule "libraries/CmdArduino"]
+	path = libraries/CmdArduino
+	url = https://github.com/barawn/CmdArduino.git
