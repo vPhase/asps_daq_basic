@@ -42,7 +42,7 @@ const char *cmd_unrecog = "Unknown command.";
 #define MSP430_TEST        11
 
 char boardID[9];
-#define VERSION "v0.5-pre2"
+#define VERSION "v0.5-pre1"
 
 SerialServer *bridgeSerial = NULL;
 unsigned char bridgeExitMatch = 0;
@@ -108,7 +108,7 @@ void setup() {
   
   ROM_EEPROMInit();  
   // Figure out the bootloader crap.
-  Serial.begin(38400);  
+  Serial.begin(9600);  
   Serial.println("ASPS-DAQ Basic " VERSION);
   // Check the BOOTCFG register.
   tmp = HWREG(FLASH_BOOTCFG);
@@ -190,10 +190,11 @@ void bslReset(bool heater, bool bsl) {
       pinMode(RST_ASPS_PWR_B, OUTPUT);
       pinMode(ASPSPWR_RX, OUTPUT);
       digitalWrite(RST_ASPS_PWR_B, 0);
-      delayMicroseconds(100);
-      digitalWrite(RST_ASPS_PWR_B, 1);
+      delayMicroseconds(500);
       digitalWrite(ASPSPWR_RX, 0);
+      delayMicroseconds(100);
       digitalWrite(ASPSPWR_RX, 1);
+      delayMicroseconds(100);
       digitalWrite(ASPSPWR_RX, 0);         
       // THIS DELAY SHOULD BE TUNED TO MAKE SURE ASPSPWR'S RESET ONESHOT HAS COMPLETED
       delay(5);
