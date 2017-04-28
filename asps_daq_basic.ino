@@ -4,7 +4,9 @@
 #include <Cmd.h>
 #include <Ethernet.h>
 #include <EthernetBootloader.h>
-
+#include "driverlib/watchdog.h"
+#include "driverlib/rom_map.h"
+#include "driverlib/rom.h"
 #include "driverlib/i2c.h"
 #include "driverlib/uart.h"
 #include "inc/hw_memmap.h"
@@ -12,6 +14,9 @@
 #include "inc/hw_nvic.h"
 #include "inc/hw_flash.h"
 #include "driverlib/sysctl.h"
+#include "driverlib/interrupt.h"
+
+bool feedWatchdog;
 
 void defaultPage(WebServer &server, WebServer::ConnectionType type, char *url_tail, bool tail_complete);
 void serialPage(WebServer &server, WebServer::ConnectionType type, char *url_tail, bool tail_complete);
@@ -105,11 +110,34 @@ void setup() {
   uint32_t user0, user1;
   uint32_t tmp;
   uint32_t boardID_raw[2];
+  uint32_t reset_type;
   
   ROM_EEPROMInit();  
   // Figure out the bootloader crap.
   Serial.begin(38400);  
   Serial.println("ASPS-DAQ Basic " VERSION);
+  Serial.print("Reset Cause(s):");
+  reset_type = SysCtlResetCauseGet();
+  if (reset_type & SYSCTL_CAUSE_WDOG0) {
+    Serial.print(" Watchdog");
+  }
+  if (reset_type & SYSCTL_CAUSE_LDO) {
+    Serial.print(" LDO");
+  }
+  if (reset_type & SYSCTL_CAUSE_SW) {
+    Serial.print(" SW"); 
+  }
+  if (reset_type & SYSCTL_CAUSE_EXT) {
+    Serial.print(" EXT");
+  }
+  if (reset_type & SYSCTL_CAUSE_BOR) {
+    Serial.print(" BOR");
+  }
+  if (reset_type & SYSCTL_CAUSE_POR) {
+    Serial.print(" POR");
+  }
+  SysCtlResetCauseClear(reset_type);
+  
   // Check the BOOTCFG register.
   tmp = HWREG(FLASH_BOOTCFG);
   if (tmp & FLASH_BOOTCFG_NW) {
@@ -171,6 +199,19 @@ void setup() {
   cmdAdd("reboot", doReboot);
   analogRead(TEMPSENSOR);
   Wire.begin();
+
+  // Prep to feed watchdog.
+  feedWatchdog = true;  
+  // Enable the watchdog peripheral
+  MAP_SysCtlPeripheralEnable(SYSCTL_PERIPH_WDOG0);
+  // Set timeout of watchdog to 2 sec
+  MAP_WatchdogReloadSet(WATCHDOG0_BASE, MAP_SysCtlClockGet() * 2);
+  // Reset when watchdog expires
+  MAP_WatchdogResetEnable(WATCHDOG0_BASE);
+  // Register the watchdog interrupt handler
+  WatchdogIntRegister(WATCHDOG0_BASE, &WatchdogIntHandler);
+  // Enable the watchdog
+  MAP_WatchdogEnable(WATCHDOG0_BASE);
 }
 
 void bslReset(bool heater, bool bsl) {
@@ -587,6 +628,10 @@ void sensorLoop()
 void loop() {
   char c;
 
+  // Watchdog. There's no race condition here because we only set, and the ISR only clears.
+  // The ISR is also slow enough that if we miss it the first time, we'll catch it the second.
+  if (!feedWatchdog) feedWatchdog = true;
+
   // Sensor handling.
   sensorLoop();
   
@@ -822,3 +867,8 @@ void defaultPage(WebServer &server, WebServer::ConnectionType type, char *url_ta
   server.print(endPage);
 }
 
+void WatchdogIntHandler(void) {
+  if (!feedWatchdog) return;
+  feedWatchdog = false;
+  WatchdogIntClear(WATCHDOG0_BASE);  
+}
