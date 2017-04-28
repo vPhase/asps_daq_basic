@@ -47,7 +47,7 @@ const char *cmd_unrecog = "Unknown command.";
 #define MSP430_TEST        11
 
 char boardID[9];
-#define VERSION "v0.5-pre1"
+#define VERSION "v0.6"
 
 SerialServer *bridgeSerial = NULL;
 unsigned char bridgeExitMatch = 0;
@@ -114,7 +114,8 @@ void setup() {
   
   ROM_EEPROMInit();  
   // Figure out the bootloader crap.
-  Serial.begin(9600);  
+  Serial.begin(38400);
+  Serial.println("");
   Serial.println("ASPS-DAQ Basic " VERSION);
   Serial.print("Reset Cause(s):");
   reset_type = SysCtlResetCauseGet();
@@ -136,6 +137,7 @@ void setup() {
   if (reset_type & SYSCTL_CAUSE_POR) {
     Serial.print(" POR");
   }
+  Serial.println("");
   SysCtlResetCauseClear(reset_type);
   
   // Check the BOOTCFG register.
@@ -197,6 +199,7 @@ void setup() {
   cmdAdd("identify", doIdentify);
   cmdAdd("bsl", doBsl);
   cmdAdd("reboot", doReboot);
+  cmdAdd("loop",doLoop);
   analogRead(TEMPSENSOR);
   Wire.begin();
 
@@ -277,6 +280,11 @@ void copyBoardID() {
   ROM_EEPROMRead(boardID_raw, ASPSDAQ_BOARD_ID_ADDRESS, 8);
   memcpy(boardID, boardID_raw, 8);
   boardID[8] = NULL;
+}
+
+int doLoop(int argc, char **argv) {
+  Serial.println("Doing infinite loop...");
+  while(1);
 }
 
 // The board ID is 8 characters.
