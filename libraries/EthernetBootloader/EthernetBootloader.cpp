@@ -5,6 +5,7 @@
 #include "driverlib/rom.h"
 #include "driverlib/sysctl.h"
 #include "driverlib/systick.h"
+#include "driverlib/watchdog.h"
 
 #define ROM_APITABLE            ((uint32_t *)0x01000010)
 #define ROM_EMACTABLE           ((uint32_t *)(ROM_APITABLE[42]))
@@ -62,6 +63,7 @@ void EthernetBootloader::handle() {
 			  }
 		  }
 		  Serial.println("EBL: Magic Packet OK!");
+		  WatchdogResetDisable(WATCHDOG0_BASE);
 		  delay(500);
 		  tmp = SysCtlClockGet();
 		  // Disable all interrupts.
