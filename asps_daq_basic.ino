@@ -34,6 +34,7 @@ const char *cmd_unrecog = "Unknown command.";
 #define ASPS_DAQ_BOOTCFG  0x7FFF08FE
 
 #define ASPSDAQ_BOARD_ID_ADDRESS 0
+#define ASPSDAQ_IP_ADDRESS 8
 
 // Enable TIVA <-> Heater BSL comms pin (inverted)
 #define TIVA_EN_BSL_B      58
@@ -111,8 +112,11 @@ void setup() {
   uint32_t tmp;
   uint32_t boardID_raw[2];
   uint32_t reset_type;
+  uint32_t ip_address;
   
   ROM_EEPROMInit();  
+  ROM_EEPROMRead(&ip_address, ASPSDAQ_IP_ADDRESS, 8);  
+
   // Figure out the bootloader crap.
   Serial.begin(9600);  
   Serial.println("ASPS-DAQ Basic " VERSION);
@@ -159,10 +163,16 @@ void setup() {
     Serial.println("Not starting Ethernet - no MAC address");
     eState = ETHERNET_NOT_STARTED;
   } else {    
-    Ethernet.begin_nonblock();
+    if (ip_address == 0xFFFFFFFF ) {
+      Ethernet.begin_nonblock();
+      eState = ETHERNET_STARTED_WAIT_DHCP;
+    } else {
+      Ethernet.begin(ip_address);
+      eState = ETHERNET_READY;
+      beginEthernet();
+    }
     Ethernet.enableLinkLed();
     Ethernet.enableActivityLed();
-    eState = ETHERNET_STARTED_WAIT_DHCP;
   }
   // set up the FAULT pulls, on state
   for (unsigned int i=0;i<5;i++) {
@@ -408,16 +418,53 @@ int printStatus(int argc, char **argv) {
   return 0;
 }
 
+// ip by itself prints IP address
+// ip 128 146 32 24
+// sets IP address to 128.146.32.24 *permanently*, but you need to reset.
+// ip 255 255 255 255 goes back to DHCP mode
 int showip(int argc, char **argv) {
-  if (eState == ETHERNET_NOT_STARTED) {
-    Serial.println("No MAC address");
-    return 0;
+  uint32_t ip_address_tmp;
+  
+  argc--;
+  argv++;
+  if (!argc) {
+    if (eState == ETHERNET_NOT_STARTED) {
+      Serial.println("No MAC address");
+      return 0;
+    }
+    if (eState == ETHERNET_STARTED_WAIT_DHCP) {
+      Serial.println("No IP address");
+      return 0;
+    }
+    Serial.println(Ethernet.localIP());
+  } else if (argc < 4) {
+    unsigned int tmp;
+    int i;
+    ip_address_tmp = 0;
+    for (i=0;i<4;i++) {
+      tmp = strtoul(argv[i], NULL, 0);
+      if (tmp < 256) {
+        ip_address_tmp = ip_address_tmp << 8;
+        ip_address_tmp = ip_address_tmp | tmp;
+      } else {
+        Serial.println("ip needs 4 octets less than 256");
+        return 0;
+      }
+    }
+    ROM_EEPROMProgram(&ip_address_tmp, ASPSDAQ_IP_ADDRESS, 4);
+    Serial.print("IP address set: ");
+    Serial.print((ip_address_tmp & 0xFF000000)>>24);
+    Serial.print(".");
+    Serial.print((ip_address_tmp & 0x00FF0000)>>16);
+    Serial.print(".");
+    Serial.print((ip_address_tmp & 0x0000FF00)>>8);
+    Serial.print(".");
+    Serial.println((ip_address_tmp & 0x000000FF));
+    if (ip_address_tmp != 0xFFFFFFFF) {
+      Serial.println("Non-DHCP mode selected! This is a warning!");
+      Serial.println("Check it before you reset!");      
+    }    
   }
-  if (eState == ETHERNET_STARTED_WAIT_DHCP) {
-    Serial.println("No IP address");
-    return 0;
-  }
-  Serial.println(Ethernet.localIP());
   return 0;
 }
 
@@ -667,22 +714,26 @@ void loop() {
         Serial.print("DHCP Complete: ");
         Serial.println(Ethernet.localIP());
       }
-      boot.begin();
-      webServer.begin();
-      webServer.addCommand("index.html", &defaultPage);
-      webServer.addCommand("serial.html", &serialPage);
-      webServer.addCommand("bsl.html", &bslPage);
-      webServer.setDefaultCommand(&defaultPage);
-      ser1.beginEthernet();
-      ser4.beginEthernet();
-      ser5.beginEthernet();
-      ser7.beginEthernet();
+      beginEthernet();
     }
   }
   if (eState == ETHERNET_READY) {
     boot.handle();
     webServer.processConnection();
   }
+}
+
+void beginEthernet() {
+  boot.begin();
+  webServer.begin();
+  webServer.addCommand("index.html", &defaultPage);
+  webServer.addCommand("serial.html", &serialPage);
+  webServer.addCommand("bsl.html", &bslPage);
+  webServer.setDefaultCommand(&defaultPage);
+  ser1.beginEthernet();
+  ser4.beginEthernet();
+  ser5.beginEthernet();
+  ser7.beginEthernet();
 }
 
 void bslPage(WebServer &server, WebServer::ConnectionType type, char *url_tail, bool tail_complete)
