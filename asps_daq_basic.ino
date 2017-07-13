@@ -218,7 +218,7 @@ void setup() {
   // Enable the watchdog peripheral
   MAP_SysCtlPeripheralEnable(SYSCTL_PERIPH_WDOG0);
   // Set timeout of watchdog to 2 sec
-  MAP_WatchdogReloadSet(WATCHDOG0_BASE, MAP_SysCtlClockGet() * 2);
+  MAP_WatchdogReloadSet(WATCHDOG0_BASE, F_CPU * 2);
   // Reset when watchdog expires
   MAP_WatchdogResetEnable(WATCHDOG0_BASE);
   // Register the watchdog interrupt handler
