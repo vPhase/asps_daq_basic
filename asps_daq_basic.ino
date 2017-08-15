@@ -48,7 +48,7 @@ const char *cmd_unrecog = "Unknown command.";
 #define MSP430_TEST        11
 
 char boardID[9];
-#define VERSION "v0.6"
+#define VERSION "v0.6.1"
 
 SerialServer *bridgeSerial = NULL;
 unsigned char bridgeExitMatch = 0;
@@ -900,6 +900,7 @@ void defaultPage(WebServer &server, WebServer::ConnectionType type, char *url_ta
   server.print(idStart);
   server.print(boardID);
   server.print(" " VERSION);
+  server.print(" " __DATE__);
   server.print(idEnd);
   for (i=0;i<5;i++) {
     server.print("<h3>");
