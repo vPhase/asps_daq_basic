@@ -48,7 +48,7 @@ const char *cmd_unrecog = "Unknown command.";
 #define MSP430_TEST        11
 
 char boardID[9];
-#define VERSION "v0.6.1"
+#define VERSION "v0.6.2.nuphase"
 
 SerialServer *bridgeSerial = NULL;
 unsigned char bridgeExitMatch = 0;
@@ -81,6 +81,43 @@ const unsigned char faultPins[5] = {67,55,44,52,43};
 const unsigned char onPins[5] = {47,7,15,42,14};
 unsigned char onState[5];
 
+typedef enum 
+{
+  MAP_FRONTEND=0,
+  MAP_SBC=1,
+  MAP_SLAVE=2, 
+  MAP_MASTER=3,
+  MAP_SWITCH=4
+}channel_mapping; 
+
+
+const unsigned char defaultState[5] = {1,1,0,0,1}; 
+
+
+const char *mapping_labels[5] = {
+  "FRONTEND ",
+  "SBC      ",
+  "SLAVE    ",
+  "MASTER   ",
+  "SWITCH   "   
+};
+
+
+typedef struct
+{
+  uint16_t magic_start;
+  int8_t temp_case; 
+  int8_t temp_uc; 
+  uint16_t current_master; 
+  uint16_t current_slave; 
+  uint16_t current_frontend; 
+  uint16_t current_sbc; 
+  uint16_t current_switch; 
+  uint8_t power_state; 
+  uint8_t fault_state; 
+  uint16_t magic_end; 
+} binary_hk_data; 
+
 typedef enum {
   SENSOR_STATE_ADC0 = 0,
   SENSOR_STATE_ADC1 = 1,
@@ -96,6 +133,7 @@ typedef enum {
   SENSOR_STATE_I2C_1_COMPLETE = 11,
   SENSOR_STATE_WAIT = 12
 } SensorState;
+
 SensorState sState = SENSOR_STATE_ADC0;
 
 typedef struct {
@@ -113,7 +151,15 @@ void setup() {
   uint32_t boardID_raw[2];
   uint32_t reset_type;
   uint32_t ip_address;
-  
+
+  // set up the FAULT pulls, on state
+  for (unsigned int i=0;i<5;i++) {
+    pinMode(faultPins[i], INPUT_PULLUP);
+    onState[i] = defaultState[i];
+    digitalWrite(onPins[i], 0);
+    if (!onState[i]) pinMode(onPins[i], OUTPUT); 
+  }
+
   ROM_EEPROMInit();  
   ROM_EEPROMRead(&ip_address, ASPSDAQ_IP_ADDRESS, 8);  
 
@@ -176,12 +222,6 @@ void setup() {
     Ethernet.enableLinkLed();
     Ethernet.enableActivityLed();
   }
-  // set up the FAULT pulls, on state
-  for (unsigned int i=0;i<5;i++) {
-    pinMode(faultPins[i], INPUT_PULLUP);
-    onState[i] = 1;
-    digitalWrite(onPins[i], 0);
-  }
   // Pull up the output reset to look nice on a scope.
   pinMode(RST_ASPS_PWR_B, INPUT_PULLUP);
   
@@ -205,7 +245,10 @@ void setup() {
   cmdAdd("bridge", serialBridge);
   cmdAdd("ip", showip);
   cmdAdd("status", printStatus);
+  cmdAdd("mapping", printMapping);
+  cmdAdd("hkbin", sendHkBin);
   cmdAdd("control", control);
+  cmdAdd("ctlmask", ctlmask);
   cmdAdd("identify", doIdentify);
   cmdAdd("bsl", doBsl);
   cmdAdd("reboot", doReboot);
@@ -364,6 +407,33 @@ int doIdentify(int argc, char **argv) {
   return 0;
 }
 
+int ctlmask(int argc, char **argv) {
+
+  if (argc < 2) {
+    Serial.println("ctlmask state_bitmask");
+    return 0;
+  }
+
+  uint8_t st = atoi(argv[1]); 
+
+  if ( (st & (1 << MAP_SWITCH)) == 0) 
+  {
+    Serial.println("Cowardly refusing to turn off switch.");
+    st  = (st | ( 1 << MAP_SWITCH)); 
+  }
+
+  for (int i = 0; i < 5; i++)
+  {
+    if ( (st & ( 1 << i)) != onState[i]) 
+    {
+      onState[i] = !onState[i] ; 
+      pinMode(onPins[i], onState[i] ? INPUT : OUTPUT); 
+    }
+  }
+
+  return 0; 
+}
+ 
 int control(int argc, char **argv) {
   unsigned char ch;
   unsigned char st;
@@ -385,8 +455,16 @@ int control(int argc, char **argv) {
     pinMode(onPins[ch], INPUT);
     onState[ch] = 1;
   }  else {
-    pinMode(onPins[ch], OUTPUT);
-    onState[ch] = 0;
+
+    if ( ch != MAP_SWITCH)
+    {
+      pinMode(onPins[ch], OUTPUT);
+      onState[ch] = 0;
+    }
+    else
+    {
+      Serial.println("Cowardly refusing to turn off switch!"); 
+    }
   }
   return 0;
 }
@@ -425,6 +503,43 @@ int printStatus(int argc, char **argv) {
   }
   return 0;
 }
+
+int sendHkBin(int argc, char ** argv) 
+{
+  binary_hk_data hkbin; 
+  hkbin.magic_start = 0xe110; 
+  hkbin.temp_case = curSensors.temps[1]; 
+  hkbin.temp_uc = curSensors.temps[0]; 
+  hkbin.current_master = curSensors.current[MAP_MASTER]; 
+  hkbin.current_slave = curSensors.current[MAP_SLAVE]; 
+  hkbin.current_frontend = curSensors.current[MAP_FRONTEND]; 
+  hkbin.current_sbc = curSensors.current[MAP_SWITCH]; 
+  hkbin.current_switch = curSensors.current[MAP_SWITCH]; 
+  hkbin.power_state = 0; 
+  hkbin.magic_end = 0xef0f;  
+
+  for (int i = 0; i < 5; i++) 
+  {
+    hkbin.power_state = (hkbin.power_state | (onState[i] << i));  
+  }
+
+  hkbin.fault_state= curSensors.fault; 
+  Serial.write( (uint8_t*) &hkbin, sizeof(hkbin)); 
+  return 0; 
+}
+
+int printMapping(int argc, char **argv) 
+{
+  for (unsigned int i = 0; i < 5; i++) 
+  {
+    Serial.print(i);  
+    Serial.print(" : ");  
+    Serial.println(mapping_labels[i]); 
+  }
+
+  return 0; 
+}
+
 
 // ip by itself prints IP address
 // ip 128 146 32 24
@@ -845,14 +960,6 @@ void serialPage(WebServer &server, WebServer::ConnectionType type, char *url_tai
   server.print(endPage);
 }
 
-const char *output_labels[5] = {
-  "AUX  ",
-  "SBC  ",
-  "AUX2 ",
-  "ARAFE",
-  "FIBER"   
-};
-
 void defaultPage(WebServer &server, WebServer::ConnectionType type, char *url_tail, bool tail_complete)
 {
   char name[5];
@@ -873,9 +980,11 @@ void defaultPage(WebServer &server, WebServer::ConnectionType type, char *url_ta
                             "<h2>Sensors</h2>"
                             "<form action=\"index.html\" method=\"get\">"
                             "<p>";
-  const char *tempStart   = "<br>Note: turning off Fiber doesn't actually work here (on purpose).<br><input type=\"submit\" value=\"Change Outputs\"></form></p><p>"
+  const char *tempStart   = "<br>Note: turning off Switch doesn't actually work here (on purpose).<br><input type=\"submit\" value=\"Change Outputs\"></form></p><p>"
                             "Temperature:"; 
   const char *endPage     = "</p></body></html>";
+
+  const char *parseFriendlyStart = "<!-- This is for the computer: \n[=parsefriendly=]"; 
   
   unsigned int i;
   server.httpSuccess();
@@ -904,7 +1013,7 @@ void defaultPage(WebServer &server, WebServer::ConnectionType type, char *url_ta
   server.print(idEnd);
   for (i=0;i<5;i++) {
     server.print("<h3>");
-    server.print(output_labels[i]);
+    server.print(mapping_labels[i]);
     server.print("</h3>");
     server.print("<input type=\"radio\" name=\"");
     server.print(i);
@@ -925,6 +1034,22 @@ void defaultPage(WebServer &server, WebServer::ConnectionType type, char *url_ta
     server.print(curSensors.temps[i]);
     server.print(" C");
   }
+
+/** now print a little something that's easier for the computer to parse */ 
+  server.print(parseFriendlyStart); 
+  server.print(curSensors.temps[1]); server.print(";"); 
+  server.print(curSensors.temps[0]); server.print(";"); 
+  server.print(curSensors.current[MAP_MASTER]); server.print(";"); 
+  server.print(curSensors.current[MAP_SLAVE]); server.print(";"); 
+  server.print(curSensors.current[MAP_FRONTEND]); server.print(";"); 
+  server.print(curSensors.current[MAP_SBC]); server.print(";"); 
+  server.print(curSensors.current[MAP_SWITCH]); server.print(";"); 
+  int mask = 0; 
+  for (int i = 0; i < 5; i++) mask = (mask | (onState[i] << i)); 
+  server.print(mask, HEX); server.print(";"); 
+  server.print((int) curSensors.fault, HEX); server.print(";"); 
+  server.print("\n"); 
+  server.println("-->"); 
   server.print(endPage);
 }
 
@@ -933,3 +1058,4 @@ void WatchdogIntHandler(void) {
   feedWatchdog = false;
   WatchdogIntClear(WATCHDOG0_BASE);  
 }
+
