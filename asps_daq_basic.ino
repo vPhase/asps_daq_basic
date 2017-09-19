@@ -48,7 +48,7 @@ const char *cmd_unrecog = "Unknown command.";
 #define MSP430_TEST        11
 
 char boardID[9];
-#define VERSION "v0.6.2.nuphase"
+#define VERSION "v0.6.3.nuphase"
 
 SerialServer *bridgeSerial = NULL;
 unsigned char bridgeExitMatch = 0;
@@ -424,7 +424,7 @@ int ctlmask(int argc, char **argv) {
 
   for (int i = 0; i < 5; i++)
   {
-    if ( (st & ( 1 << i)) != onState[i]) 
+    if ( (!!(st & ( 1 << i))) != onState[i]) 
     {
       onState[i] = !onState[i] ; 
       pinMode(onPins[i], onState[i] ? INPUT : OUTPUT); 
