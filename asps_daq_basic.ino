@@ -48,7 +48,7 @@ const char *cmd_unrecog = "Unknown command.";
 #define MSP430_TEST        11
 
 char boardID[9];
-#define VERSION "v0.6.3.nuphase"
+#define VERSION "v0.6.4.nuphase"
 
 SerialServer *bridgeSerial = NULL;
 unsigned char bridgeExitMatch = 0;
@@ -422,6 +422,13 @@ int ctlmask(int argc, char **argv) {
     st  = (st | ( 1 << MAP_SWITCH)); 
   }
 
+  if ( (st & (1 << MAP_SBC)) == 0) 
+  {
+    Serial.println("Cowardly refusing to turn off SBC.");
+    st  = (st | ( 1 << MAP_SBC)); 
+  }
+
+
   for (int i = 0; i < 5; i++)
   {
     if ( (!!(st & ( 1 << i))) != onState[i]) 
@@ -456,14 +463,14 @@ int control(int argc, char **argv) {
     onState[ch] = 1;
   }  else {
 
-    if ( ch != MAP_SWITCH)
+    if ( ch != MAP_SWITCH && ch != MAP_SBC)
     {
       pinMode(onPins[ch], OUTPUT);
       onState[ch] = 0;
     }
     else
     {
-      Serial.println("Cowardly refusing to turn off switch!"); 
+      Serial.println("Cowardly refusing to turn off switch or SBC!"); 
     }
   }
   return 0;
