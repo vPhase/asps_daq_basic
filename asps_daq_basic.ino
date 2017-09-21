@@ -28,7 +28,7 @@ void heaterPage(WebServer &server, WebServer::ConnectionType type, char *url_tai
 
 const char *cmd_banner = ">>> ASPS-DAQ Basic Setup Interface";
 const char *cmd_prompt = "ADAQ> ";
-const char *cmd_unrecog = "Unknown command.";
+const char *cmd_unrecog = "Unknown command (try help).";
 
 #define BOOTCFG_MASK      0x7FFF00EC
 // NW = 0, PORT = 0 (A), pin = 2 (010), POL = 0 (Low), EN = 0,
@@ -51,7 +51,7 @@ const char *cmd_unrecog = "Unknown command.";
 #define MSP430_TEST        11
 
 char boardID[9];
-#define VERSION "v0.7.0.nuphase"
+#define VERSION "v0.7.3.nuphase"
 
 SerialServer *bridgeSerial = NULL;
 unsigned char bridgeExitMatch = 0;
@@ -414,25 +414,30 @@ int doIdentify(int argc, char **argv) {
   return 0;
 }
 
+int drainHeaterSerial() 
+{
+  const int delayAmt = 2;
+  delay(delayAmt); // in case more data is about to comne
+  while (Serial7.available()) 
+  {
+    ser7.handle(); 
+    delay(delayAmt); // in case there is more data about to come
+  }
+}
+
 int setHeaterCurrent(int current) 
 {
   char buf[128];  
   char c; 
-  char * pos = &buf[0]; 
   int nread=0;
-  sprintf(buf, "\r\n{\"current\": %d}\r\n", current); 
+  sprintf(buf, "{\"current\":%d}", current); 
 
+  Serial.print("Sending: ") ; 
+  Serial.println(buf); 
   //drain the serial
-  while (Serial7.available()) 
-  {
-    ser7.handle(); 
-  }
-
-  while(*pos) 
-  {
-    Serial7.write(*pos); 
-    pos++; 
-  }
+  drainHeaterSerial(); 
+  Serial7.println(buf); 
+  return 0; 
 }
 
 int getHeaterLine(WebServer * server) 
@@ -457,12 +462,12 @@ int getHeaterLine(WebServer * server)
 
 int heaterCurrent(int argc, char **argv) {  
   int current = 0;
-  if (argc < 1) 
+  if (argc < 2) 
   {
-    Serial.println("heaterCurrent current (mA)"); 
+    Serial.println("heaterCurrent current_mA"); 
     return 0; 
   }
-  current = atoi(*argv); 
+  current = atoi(argv[1]); 
   setHeaterCurrent(current); 
   getHeaterLine(0); 
   return 0;
@@ -470,6 +475,7 @@ int heaterCurrent(int argc, char **argv) {
 
 int heaterLine(int argc, char **argv) 
 {
+  drainHeaterSerial(); 
   getHeaterLine(0); 
   return 0; 
 }
@@ -478,25 +484,24 @@ int printHelp(int argc, char ** argv)
 {
 
   Serial.println("Possible commands: ") ; 
-  Serial.println("\tgetmac ::get the Mac Address");
-  Serial.println("\tsetmac ::set the Mac Address");
-  Serial.println("\tsavemac : save mac address to eeprom");
-  Serial.println("\tsetid :: set the board id" );
-  Serial.println("\tbridge :: enable serial bridge, +++ to exit");
-  Serial.println("\tip :: print out ip address");
-  Serial.println("\tstatus :: get current status");
-  Serial.println("\tmapping :: print the output control mapping");
-  Serial.println("\thkbin :: get binary housekeeping data" );
-  Serial.println("\tcontrol ::set individual output control");
-  Serial.println("\tctlmask :: set output enables via (decimal) bitmask");
-  Serial.println("\tidentify :: query version");
-  Serial.println("\tbsl :: reboot asps power or heater, possibly in bootloader mode");
-  Serial.println("\theaterCurrent :: set the heater current" ); 
-  Serial.println("\theaterLine :: get last line from heater "); 
-  Serial.println("\treboot :: reboot ");
-  Serial.println("\tloop  :: do an infinite loop (why?) ");
-  Serial.println("\thelp  :: prin this wonderful message"); 
-
+  Serial.println("\tgetmac       \t--\t get the Mac Address");
+  Serial.println("\tsetmac       \t--\t set the Mac Address");
+  Serial.println("\tsavemac      \t--\t save mac address to eeprom");
+  Serial.println("\tsetid        \t--\t set the board id" );
+  Serial.println("\tbridge       \t--\t enable serial bridge, +++ to exit");
+  Serial.println("\tip           \t--\t print out ip address");
+  Serial.println("\tstatus       \t--\t get current status");
+  Serial.println("\tmapping      \t--\t print the output control mapping");
+  Serial.println("\thkbin        \t--\t get binary housekeeping data" );
+  Serial.println("\tcontrol      \t--\t set individual output control");
+  Serial.println("\tctlmask      \t--\t set output enables via (decimal) bitmask");
+  Serial.println("\tidentify     \t--\t query version");
+  Serial.println("\tbsl          \t--\t reboot asps power or heater, possibly in bootloader mode");
+  Serial.println("\theaterCurrent\t--\t set the heater current" ); 
+  Serial.println("\theaterLine   \t--\t get last line from heater "); 
+  Serial.println("\treboot       \t--\t reboot ");
+  Serial.println("\tloop         \t--\t do an infinite loop (why?) ");
+  Serial.println("\thelp         \t--\t print this wonderful message"); 
   return 0; 
 }
 
@@ -1168,10 +1173,10 @@ void heaterPage(WebServer &server, WebServer::ConnectionType type, char *url_tai
                             "<body>"
                             "<h1>ASPS-DAQ Heater Control Page</h1>"
                             "<p> Last heater line: "; 
-  const char * currentInput = "<form action=\"heater.html\" method=\"post\">"
-                               "Set heater current: <input name=\"heater\" value=\"0\">"
-                               "<input type=\"submit\"> </form>" ; 
-  const char *endPage     = "</p></body></html>";
+  const char * currentInput = "</p><form action=\"heater.html\" method=\"post\">"
+                               "<p>Set heater current: <input name=\"heater\" value=\"0\">"
+                               "<input type=\"submit\"></p> </form>" ; 
+  const char *endPage     = "</body></html>";
 
   server.print(startPage); 
   if (type == WebServer::POST)
@@ -1192,6 +1197,7 @@ void heaterPage(WebServer &server, WebServer::ConnectionType type, char *url_tai
   }
   else
   {
+     drainHeaterSerial(); 
      getHeaterLine(&server); 
   }
 
