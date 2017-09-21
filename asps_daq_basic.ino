@@ -51,7 +51,7 @@ const char *cmd_unrecog = "Unknown command (try help).";
 #define MSP430_TEST        11
 
 char boardID[9];
-#define VERSION "v0.7.3.nuphase"
+#define VERSION "v0.7.4.nuphase"
 
 SerialServer *bridgeSerial = NULL;
 unsigned char bridgeExitMatch = 0;
@@ -416,12 +416,14 @@ int doIdentify(int argc, char **argv) {
 
 int drainHeaterSerial() 
 {
-  const int delayAmt = 2;
-  delay(delayAmt); // in case more data is about to comne
+  const int delayAmt = 3;
+  if (!Serial7.available())
+    delay(delayAmt); // in case more data is about to comne
   while (Serial7.available()) 
   {
     ser7.handle(); 
-    delay(delayAmt); // in case there is more data about to come
+    if (!Serial7.available()) 
+      delay(delayAmt); // in case there is more data about to come
   }
 }
 
@@ -444,13 +446,13 @@ int getHeaterLine(WebServer * server)
 {
   char buf[128];  
   int nread;
-  nread = Serial7.readBytesUntil('\n',buf,127); 
+  nread = Serial7.readBytesUntil('\r',buf,127); 
   buf[nread]=0; 
   if (nread) 
   {
     if (server) 
     {
-      server->println(buf); 
+      server->print(buf); 
     }
     else
     {
@@ -1178,6 +1180,7 @@ void heaterPage(WebServer &server, WebServer::ConnectionType type, char *url_tai
                                "<input type=\"submit\"></p> </form>" ; 
   const char *endPage     = "</body></html>";
 
+  server.httpSuccess(); 
   server.print(startPage); 
   if (type == WebServer::POST)
   {
@@ -1192,6 +1195,11 @@ void heaterPage(WebServer &server, WebServer::ConnectionType type, char *url_tai
         int current = atoi(value); 
         setHeaterCurrent(current); 
         getHeaterLine(&server); 
+      }
+      else
+      {
+        server.print("Bad param:"); 
+        server.print(name); 
       }
     } while(repeat) ; 
   }
