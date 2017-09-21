@@ -447,7 +447,7 @@ int getHeaterLine(WebServer * server)
   char buf[128];  
   int nread;
   nread = Serial7.readBytesUntil('\r',buf,127); 
-  buf[nread]=0; 
+  buf[nread-1]=0; 
   if (nread) 
   {
     if (server) 
