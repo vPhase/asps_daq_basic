@@ -21,6 +21,9 @@ bool feedWatchdog;
 void defaultPage(WebServer &server, WebServer::ConnectionType type, char *url_tail, bool tail_complete);
 void serialPage(WebServer &server, WebServer::ConnectionType type, char *url_tail, bool tail_complete);
 void bslPage(WebServer &server, WebServer::ConnectionType type, char *url_tail, bool tail_complete);
+void parsePage(WebServer &server, WebServer::ConnectionType type, char *url_tail, bool tail_complete);
+void heaterPage(WebServer &server, WebServer::ConnectionType type, char *url_tail, bool tail_complete);
+
 
 
 const char *cmd_banner = ">>> ASPS-DAQ Basic Setup Interface";
@@ -48,7 +51,7 @@ const char *cmd_unrecog = "Unknown command.";
 #define MSP430_TEST        11
 
 char boardID[9];
-#define VERSION "v0.6.4.nuphase"
+#define VERSION "v0.7.0.nuphase"
 
 SerialServer *bridgeSerial = NULL;
 unsigned char bridgeExitMatch = 0;
@@ -251,8 +254,11 @@ void setup() {
   cmdAdd("ctlmask", ctlmask);
   cmdAdd("identify", doIdentify);
   cmdAdd("bsl", doBsl);
+  cmdAdd("heaterCurrent", heaterCurrent); 
+  cmdAdd("heaterLine", heaterLine); 
   cmdAdd("reboot", doReboot);
   cmdAdd("loop",doLoop);
+  cmdAdd("help",printHelp); 
   analogRead(TEMPSENSOR);
   Wire.begin();
 
@@ -269,6 +275,7 @@ void setup() {
   // Enable the watchdog
   MAP_WatchdogEnable(WATCHDOG0_BASE);
 }
+
 
 void bslReset(bool heater, bool bsl) {
   if (!heater) {
@@ -405,6 +412,92 @@ int doIdentify(int argc, char **argv) {
   Serial.print(" ");
   Serial.println(VERSION);
   return 0;
+}
+
+int setHeaterCurrent(int current) 
+{
+  char buf[128];  
+  char c; 
+  char * pos = &buf[0]; 
+  int nread=0;
+  sprintf(buf, "\r\n{\"current\": %d}\r\n", current); 
+
+  //drain the serial
+  while (Serial7.available()) 
+  {
+    ser7.handle(); 
+  }
+
+  while(*pos) 
+  {
+    Serial7.write(*pos); 
+    pos++; 
+  }
+}
+
+int getHeaterLine(WebServer * server) 
+{
+  char buf[128];  
+  int nread;
+  nread = Serial7.readBytesUntil('\n',buf,127); 
+  buf[nread]=0; 
+  if (nread) 
+  {
+    if (server) 
+    {
+      server->println(buf); 
+    }
+    else
+    {
+      Serial.println(buf); 
+    }
+  }
+  return 0; 
+} 
+
+int heaterCurrent(int argc, char **argv) {  
+  int current = 0;
+  if (argc < 1) 
+  {
+    Serial.println("heaterCurrent current (mA)"); 
+    return 0; 
+  }
+  current = atoi(*argv); 
+  setHeaterCurrent(current); 
+  getHeaterLine(0); 
+  return 0;
+}
+
+int heaterLine(int argc, char **argv) 
+{
+  getHeaterLine(0); 
+  return 0; 
+}
+
+int printHelp(int argc, char ** argv) 
+{
+
+  Serial.println("Possible commands: ") ; 
+  Serial.println("\tgetmac ::get the Mac Address");
+  Serial.println("\tsetmac ::set the Mac Address");
+  Serial.println("\tsavemac : save mac address to eeprom");
+  Serial.println("\tsetid :: set the board id" );
+  Serial.println("\tbridge :: enable serial bridge, +++ to exit");
+  Serial.println("\tip :: print out ip address");
+  Serial.println("\tstatus :: get current status");
+  Serial.println("\tmapping :: print the output control mapping");
+  Serial.println("\thkbin :: get binary housekeeping data" );
+  Serial.println("\tcontrol ::set individual output control");
+  Serial.println("\tctlmask :: set output enables via (decimal) bitmask");
+  Serial.println("\tidentify :: query version");
+  Serial.println("\tbsl :: reboot asps power or heater, possibly in bootloader mode");
+  Serial.println("\theaterCurrent :: set the heater current" ); 
+  Serial.println("\theaterLine :: get last line from heater "); 
+  Serial.println("\treboot :: reboot ");
+  Serial.println("\tloop  :: do an infinite loop (why?) ");
+  Serial.println("\thelp  :: prin this wonderful message"); 
+
+  return 0; 
 }
 
 int ctlmask(int argc, char **argv) {
@@ -859,6 +952,8 @@ void beginEthernet() {
   webServer.addCommand("index.html", &defaultPage);
   webServer.addCommand("serial.html", &serialPage);
   webServer.addCommand("bsl.html", &bslPage);
+  webServer.addCommand("parse.html", &parsePage);
+  webServer.addCommand("heater.html", &heaterPage);
   webServer.setDefaultCommand(&defaultPage);
   ser1.beginEthernet();
   ser4.beginEthernet();
@@ -991,7 +1086,6 @@ void defaultPage(WebServer &server, WebServer::ConnectionType type, char *url_ta
                             "Temperature:"; 
   const char *endPage     = "</p></body></html>";
 
-  const char *parseFriendlyStart = "<!-- This is for the computer: \n[=parsefriendly=]"; 
   
   unsigned int i;
   server.httpSuccess();
@@ -1042,8 +1136,14 @@ void defaultPage(WebServer &server, WebServer::ConnectionType type, char *url_ta
     server.print(" C");
   }
 
-/** now print a little something that's easier for the computer to parse */ 
-  server.print(parseFriendlyStart); 
+  server.print(endPage);
+}
+
+void parsePage(WebServer &server, WebServer::ConnectionType type, char *url_tail, bool tail_complete)
+{
+
+/**Print something that's easier for the computer to parse */ 
+  server.print("[=parsefriendly=]"); 
   server.print(curSensors.temps[1]); server.print(";"); 
   server.print(curSensors.temps[0]); server.print(";"); 
   server.print(curSensors.current[MAP_MASTER]); server.print(";"); 
@@ -1056,8 +1156,47 @@ void defaultPage(WebServer &server, WebServer::ConnectionType type, char *url_ta
   server.print(mask, HEX); server.print(";"); 
   server.print((int) curSensors.fault, HEX); server.print(";"); 
   server.print("\n"); 
-  server.println("-->"); 
-  server.print(endPage);
+}
+
+void heaterPage(WebServer &server, WebServer::ConnectionType type, char *url_tail, bool tail_complete)
+{
+  
+ const char *startPage = "<html>"
+                            "<head>"
+                            "<title>ASPS-DAQ Heater Control Page</title>"
+                            "</head>"
+                            "<body>"
+                            "<h1>ASPS-DAQ Heater Control Page</h1>"
+                            "<p> Last heater line: "; 
+  const char * currentInput = "<form action=\"heater.html\" method=\"post\">"
+                               "Set heater current: <input name=\"heater\" value=\"0\">"
+                               "<input type=\"submit\"> </form>" ; 
+  const char *endPage     = "</p></body></html>";
+
+  server.print(startPage); 
+  if (type == WebServer::POST)
+  {
+    bool repeat; 
+    char name[16+1]; 
+    char value[16+1]; 
+    do
+    {
+      repeat = server.readPOSTparam(name,16,value,16); 
+      if (!strcmp(name,"heater"))
+      {
+        int current = atoi(value); 
+        setHeaterCurrent(current); 
+        getHeaterLine(&server); 
+      }
+    } while(repeat) ; 
+  }
+  else
+  {
+     getHeaterLine(&server); 
+  }
+
+  server.print(currentInput); 
+  server.print(endPage); 
 }
 
 void WatchdogIntHandler(void) {
