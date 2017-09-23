@@ -450,7 +450,7 @@ int getHeaterLine(WebServer * server)
   char buf[128];  
   int nread;
   nread = Serial7.readBytesUntil('\r',buf,127); 
-  buf[nread-1]=0; 
+  buf[nread]=0; 
   if (nread) 
   {
     if (server) 
@@ -1204,11 +1204,14 @@ void heaterPage(WebServer &server, WebServer::ConnectionType type, char *url_tai
         int current = atoi(value); 
         setHeaterCurrent(current,1); 
         getHeaterLine(&server); 
+        server.print("</p><p><b> set heater = "); 
+        server.print(current);
+        server.print("</b>");
       }
       else
       {
-        server.print("Bad param:"); 
-        server.print(name); 
+//        server.print("Bad param:"); 
+//        server.print(name); 
       }
     } while(repeat) ; 
   }
