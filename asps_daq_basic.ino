@@ -427,15 +427,18 @@ int drainHeaterSerial()
   }
 }
 
-int setHeaterCurrent(int current) 
+int setHeaterCurrent(int current, int quiet) 
 {
   char buf[128];  
   char c; 
   int nread=0;
   sprintf(buf, "{\"current\":%d}", current); 
 
-  Serial.print("Sending: ") ; 
-  Serial.println(buf); 
+  if (!quiet)
+  {
+    Serial.print("Sending: ") ; 
+    Serial.println(buf); 
+  }
   //drain the serial
   drainHeaterSerial(); 
   Serial7.println(buf); 
@@ -464,14 +467,20 @@ int getHeaterLine(WebServer * server)
 
 int heaterCurrent(int argc, char **argv) {  
   int current = 0;
+  int quiet = 0;
   if (argc < 2) 
   {
-    Serial.println("heaterCurrent current_mA"); 
+    Serial.println("heaterCurrent current_mA [quiet=0]"); 
     return 0; 
   }
   current = atoi(argv[1]); 
-  setHeaterCurrent(current); 
-  getHeaterLine(0); 
+  if (argc > 2) quiet = atoi(argv[2]); 
+  setHeaterCurrent(current,quiet); 
+
+  if (!quiet) 
+  {
+    getHeaterLine(0); 
+  }
   return 0;
 }
 
@@ -1193,7 +1202,7 @@ void heaterPage(WebServer &server, WebServer::ConnectionType type, char *url_tai
       if (!strcmp(name,"heater"))
       {
         int current = atoi(value); 
-        setHeaterCurrent(current); 
+        setHeaterCurrent(current,1); 
         getHeaterLine(&server); 
       }
       else
