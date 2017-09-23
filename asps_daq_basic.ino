@@ -51,7 +51,7 @@ const char *cmd_unrecog = "Unknown command (try help).";
 #define MSP430_TEST        11
 
 char boardID[9];
-#define VERSION "v0.7.5.nuphase"
+#define VERSION "v0.7.6.nuphase"
 
 SerialServer *bridgeSerial = NULL;
 unsigned char bridgeExitMatch = 0;
