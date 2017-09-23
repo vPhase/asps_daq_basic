@@ -94,7 +94,7 @@ typedef enum
 }channel_mapping; 
 
 
-const unsigned char defaultState[5] = {1,1,0,0,1}; 
+const unsigned char defaultState[5] = {0,1,0,0,1}; 
 
 
 const char *mapping_labels[5] = {
