@@ -51,7 +51,7 @@ const char *cmd_unrecog = "Unknown command (try help).";
 #define MSP430_TEST        11
 
 char boardID[9];
-#define VERSION "v0.7.6.nuphase"
+#define VERSION "v0.7.7.nuphase"
 
 SerialServer *bridgeSerial = NULL;
 unsigned char bridgeExitMatch = 0;
@@ -629,7 +629,7 @@ int sendHkBin(int argc, char ** argv)
   hkbin.current_master = curSensors.current[MAP_MASTER]; 
   hkbin.current_slave = curSensors.current[MAP_SLAVE]; 
   hkbin.current_frontend = curSensors.current[MAP_FRONTEND]; 
-  hkbin.current_sbc = curSensors.current[MAP_SWITCH]; 
+  hkbin.current_sbc = curSensors.current[MAP_SBC]; 
   hkbin.current_switch = curSensors.current[MAP_SWITCH]; 
   hkbin.power_state = 0; 
   hkbin.magic_end = 0xef0f;  
